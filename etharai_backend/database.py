@@ -1,22 +1,25 @@
 import os
-from pymongo import MongoClient
 from dotenv import load_dotenv
+from pymongo import MongoClient, ASCENDING
 
 load_dotenv()
 
-MONGODB_URI = os.getenv("MONGODB_URI", "mongodb://localhost:27017")
-DATABASE_NAME = os.getenv("DATABASE_NAME", "hrms_lite")
+MONGO_URL = os.getenv("MONGODB_URI", "mongodb://localhost:27017")
+DB_NAME = os.getenv("DATABASE_NAME", "hrms_lite")
 
-client = MongoClient(MONGODB_URI)
-db = client[DATABASE_NAME]
+_client = MongoClient(MONGO_URL)
+_database = _client[DB_NAME]
 
-# Collections
-employees_collection = db["employees"]
-attendance_collection = db["attendance"]
+emp_col = _database["employees"]
+att_col = _database["attendance"]
 
-def init_db():
-    """Create indexes for data integrity."""
-    employees_collection.create_index("employee_id", unique=True)
-    employees_collection.create_index("email", unique=True)
-    attendance_collection.create_index([("employee_id", 1), ("date", 1)], unique=True)
-    print(f"Connected to MongoDB: {DATABASE_NAME}")
+
+def setup_indexes():
+    """Ensure unique constraints and compound indexes are in place."""
+    emp_col.create_index("employee_id", unique=True)
+    emp_col.create_index("email", unique=True)
+    att_col.create_index(
+        [("employee_id", ASCENDING), ("date", ASCENDING)],
+        unique=True,
+    )
+    print(f"[DB] Successfully connected — database: {DB_NAME}")

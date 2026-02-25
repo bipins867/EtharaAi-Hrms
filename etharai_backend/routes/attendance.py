@@ -1,79 +1,77 @@
-from fastapi import APIRouter, HTTPException, Query, status
-from database import employees_collection, attendance_collection
-from models import AttendanceCreate, AttendanceResponse
-from pymongo.errors import DuplicateKeyError
 from typing import Optional
+
+from fastapi import APIRouter, HTTPException, Query, status
+from pymongo.errors import DuplicateKeyError
+
+from database import emp_col, att_col
+from models import NewAttendance, AttendanceOut
 
 router = APIRouter(prefix="/api/attendance", tags=["Attendance"])
 
 
-def attendance_to_response(record: dict) -> dict:
-    """Convert MongoDB document to response format."""
+def _format_record(rec: dict) -> dict:
+    """Convert a raw attendance document for the API response."""
     return {
-        "id": str(record["_id"]),
-        "employee_id": record["employee_id"],
-        "date": record["date"],
-        "status": record["status"],
+        "id": str(rec["_id"]),
+        "employee_id": rec["employee_id"],
+        "date": rec["date"],
+        "status": rec["status"],
     }
 
 
-@router.post("", response_model=AttendanceResponse, status_code=status.HTTP_201_CREATED)
-async def mark_attendance(attendance: AttendanceCreate):
-    """Mark attendance for an employee."""
-    attendance_data = attendance.model_dump()
+@router.post("", response_model=AttendanceOut, status_code=status.HTTP_201_CREATED)
+async def mark(payload: NewAttendance):
+    """Record or update attendance for a given employee and date."""
+    data = payload.model_dump()
 
-    # Verify employee exists
-    employee = employees_collection.find_one({"employee_id": attendance_data["employee_id"]})
-    if not employee:
+    # make sure the employee is real
+    if emp_col.find_one({"employee_id": data["employee_id"]}) is None:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Employee with ID '{attendance_data['employee_id']}' not found"
+            status.HTTP_404_NOT_FOUND,
+            detail=f"Employee '{data['employee_id']}' does not exist",
         )
 
-    # Check for existing attendance on same date
-    existing = attendance_collection.find_one({
-        "employee_id": attendance_data["employee_id"],
-        "date": attendance_data["date"]
+    # if a record already exists for that day, just flip the status
+    prev = att_col.find_one({
+        "employee_id": data["employee_id"],
+        "date": data["date"],
     })
-    if existing:
-        # Update existing record instead of duplicating
-        attendance_collection.update_one(
-            {"_id": existing["_id"]},
-            {"$set": {"status": attendance_data["status"]}}
+    if prev:
+        att_col.update_one(
+            {"_id": prev["_id"]},
+            {"$set": {"status": data["status"]}},
         )
-        existing["status"] = attendance_data["status"]
-        return attendance_to_response(existing)
+        prev["status"] = data["status"]
+        return _format_record(prev)
 
     try:
-        result = attendance_collection.insert_one(attendance_data)
-        attendance_data["_id"] = result.inserted_id
-        return attendance_to_response(attendance_data)
+        result = att_col.insert_one(data)
+        data["_id"] = result.inserted_id
+        return _format_record(data)
     except DuplicateKeyError:
         raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Attendance already marked for this employee on this date"
+            status.HTTP_409_CONFLICT,
+            detail="Attendance already exists for this employee on the given date",
         )
 
 
-@router.get("/{employee_id}", response_model=list[AttendanceResponse])
-async def get_attendance(
+@router.get("/{employee_id}", response_model=list[AttendanceOut])
+async def history(
     employee_id: str,
-    date: Optional[str] = Query(None, description="Filter by date (YYYY-MM-DD)")
+    date: Optional[str] = Query(None, description="Optional date filter (YYYY-MM-DD)"),
 ):
-    """Get attendance records for an employee, optionally filtered by date."""
-    emp_id = employee_id.upper()
+    """Retrieve attendance records for one employee, newest first."""
+    eid = employee_id.upper()
 
-    # Verify employee exists
-    employee = employees_collection.find_one({"employee_id": emp_id})
-    if not employee:
+    if emp_col.find_one({"employee_id": eid}) is None:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Employee with ID '{employee_id}' not found"
+            status.HTTP_404_NOT_FOUND,
+            detail=f"Employee '{employee_id}' does not exist",
         )
 
-    query = {"employee_id": emp_id}
+    filters: dict = {"employee_id": eid}
     if date:
-        query["date"] = date
+        filters["date"] = date
 
-    records = attendance_collection.find(query).sort("date", -1)
-    return [attendance_to_response(r) for r in records]
+    cursor = att_col.find(filters).sort("date", -1)
+    return [_format_record(r) for r in cursor]

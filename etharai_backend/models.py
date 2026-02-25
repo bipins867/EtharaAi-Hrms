@@ -1,48 +1,65 @@
-from pydantic import BaseModel, EmailStr, Field, field_validator
-from typing import Optional
-from enum import Enum
 import re
+from enum import Enum
+from typing import Optional
+from datetime import datetime
+from pydantic import BaseModel, EmailStr, Field, field_validator
 
 
-class AttendanceStatus(str, Enum):
+# ---------- enums ----------
+
+class StatusOption(str, Enum):
     PRESENT = "Present"
     ABSENT = "Absent"
 
 
-class EmployeeCreate(BaseModel):
-    employee_id: str = Field(..., min_length=1, max_length=20, description="Unique employee identifier")
-    full_name: str = Field(..., min_length=1, max_length=100, description="Full name of the employee")
-    email: EmailStr = Field(..., description="Valid email address")
-    department: str = Field(..., min_length=1, max_length=50, description="Department name")
+# ---------- request schemas ----------
+
+class NewEmployee(BaseModel):
+    employee_id: str = Field(
+        ..., min_length=1, max_length=20,
+        description="Unique ID assigned to the employee",
+    )
+    full_name: str = Field(
+        ..., min_length=1, max_length=100,
+        description="Employee full name",
+    )
+    email: EmailStr = Field(..., description="Work email address")
+    department: str = Field(
+        ..., min_length=1, max_length=50,
+        description="Department the employee belongs to",
+    )
 
     @field_validator("employee_id")
     @classmethod
-    def validate_employee_id(cls, v):
-        v = v.strip()
-        if not v:
-            raise ValueError("Employee ID cannot be empty")
-        if not re.match(r'^[A-Za-z0-9_-]+$', v):
-            raise ValueError("Employee ID can only contain letters, numbers, hyphens, and underscores")
-        return v.upper()
+    def clean_employee_id(cls, value: str) -> str:
+        value = value.strip()
+        if len(value) == 0:
+            raise ValueError("employee_id must not be blank")
+        pattern = r'^[A-Za-z0-9_-]+$'
+        if not re.match(pattern, value):
+            raise ValueError(
+                "Only alphanumeric characters, hyphens and underscores are allowed"
+            )
+        return value.upper()
 
     @field_validator("full_name")
     @classmethod
-    def validate_full_name(cls, v):
-        v = v.strip()
-        if not v:
-            raise ValueError("Full name cannot be empty")
-        return v
+    def clean_name(cls, value: str) -> str:
+        value = value.strip()
+        if len(value) == 0:
+            raise ValueError("Name field is required")
+        return value
 
     @field_validator("department")
     @classmethod
-    def validate_department(cls, v):
-        v = v.strip()
-        if not v:
-            raise ValueError("Department cannot be empty")
-        return v
+    def clean_department(cls, value: str) -> str:
+        value = value.strip()
+        if len(value) == 0:
+            raise ValueError("Department is required")
+        return value
 
 
-class EmployeeResponse(BaseModel):
+class EmployeeOut(BaseModel):
     id: str
     employee_id: str
     full_name: str
@@ -50,35 +67,33 @@ class EmployeeResponse(BaseModel):
     department: str
 
 
-class AttendanceCreate(BaseModel):
-    employee_id: str = Field(..., min_length=1, description="Employee ID")
-    date: str = Field(..., description="Date in YYYY-MM-DD format")
-    status: AttendanceStatus = Field(..., description="Attendance status: Present or Absent")
+class NewAttendance(BaseModel):
+    employee_id: str = Field(..., min_length=1, description="Target employee ID")
+    date: str = Field(..., description="Attendance date (YYYY-MM-DD)")
+    status: StatusOption = Field(..., description="Present or Absent")
 
     @field_validator("employee_id")
     @classmethod
-    def validate_employee_id(cls, v):
-        v = v.strip().upper()
-        if not v:
-            raise ValueError("Employee ID cannot be empty")
-        return v
+    def normalise_emp_id(cls, value: str) -> str:
+        value = value.strip().upper()
+        if len(value) == 0:
+            raise ValueError("Employee ID is required")
+        return value
 
     @field_validator("date")
     @classmethod
-    def validate_date(cls, v):
-        v = v.strip()
-        if not re.match(r'^\d{4}-\d{2}-\d{2}$', v):
-            raise ValueError("Date must be in YYYY-MM-DD format")
-        # Validate it's a real date
-        from datetime import datetime
+    def check_date_format(cls, value: str) -> str:
+        value = value.strip()
+        if not re.match(r'^\d{4}-\d{2}-\d{2}$', value):
+            raise ValueError("Expected format: YYYY-MM-DD")
         try:
-            datetime.strptime(v, "%Y-%m-%d")
+            datetime.strptime(value, "%Y-%m-%d")
         except ValueError:
-            raise ValueError("Invalid date")
-        return v
+            raise ValueError("Not a valid calendar date")
+        return value
 
 
-class AttendanceResponse(BaseModel):
+class AttendanceOut(BaseModel):
     id: str
     employee_id: str
     date: str

@@ -1,55 +1,55 @@
+from datetime import date as dt_date
 from fastapi import APIRouter
-from database import employees_collection, attendance_collection
-from datetime import date
+
+from database import emp_col, att_col
 
 router = APIRouter(prefix="/api/dashboard", tags=["Dashboard"])
 
 
 @router.get("/summary")
-async def get_dashboard_summary():
-    """Get dashboard summary statistics."""
-    today = date.today().isoformat()
+async def overview():
+    """Aggregate key metrics for the admin dashboard."""
+    today_str = dt_date.today().isoformat()
 
-    # Total employees
-    total_employees = employees_collection.count_documents({})
+    total_emp = emp_col.count_documents({})
+    present_cnt = att_col.count_documents({"date": today_str, "status": "Present"})
+    absent_cnt = att_col.count_documents({"date": today_str, "status": "Absent"})
 
-    # Today's attendance
-    present_today = attendance_collection.count_documents({"date": today, "status": "Present"})
-    absent_today = attendance_collection.count_documents({"date": today, "status": "Absent"})
-
-    # Department breakdown
-    pipeline = [
+    # group employees by department
+    dept_pipeline = [
         {"$group": {"_id": "$department", "count": {"$sum": 1}}},
-        {"$sort": {"count": -1}}
+        {"$sort": {"count": -1}},
     ]
-    departments = list(employees_collection.aggregate(pipeline))
-    department_breakdown = [{"department": d["_id"], "count": d["count"]} for d in departments]
+    dept_docs = list(emp_col.aggregate(dept_pipeline))
+    dept_data = [
+        {"department": d["_id"], "count": d["count"]}
+        for d in dept_docs
+    ]
 
-    # Per-employee attendance summary (total present days)
-    attendance_pipeline = [
+    # total present days per employee
+    att_pipeline = [
         {"$match": {"status": "Present"}},
         {"$group": {"_id": "$employee_id", "present_days": {"$sum": 1}}},
-        {"$sort": {"present_days": -1}}
+        {"$sort": {"present_days": -1}},
     ]
-    employee_attendance = list(attendance_collection.aggregate(attendance_pipeline))
+    att_docs = list(att_col.aggregate(att_pipeline))
 
-    # Enrich with employee names
-    attendance_summary = []
-    for item in employee_attendance:
-        emp = employees_collection.find_one({"employee_id": item["_id"]})
+    att_data = []
+    for entry in att_docs:
+        emp = emp_col.find_one({"employee_id": entry["_id"]})
         if emp:
-            attendance_summary.append({
-                "employee_id": item["_id"],
+            att_data.append({
+                "employee_id": entry["_id"],
                 "full_name": emp["full_name"],
                 "department": emp["department"],
-                "present_days": item["present_days"]
+                "present_days": entry["present_days"],
             })
 
     return {
-        "total_employees": total_employees,
-        "present_today": present_today,
-        "absent_today": absent_today,
-        "not_marked_today": total_employees - present_today - absent_today,
-        "department_breakdown": department_breakdown,
-        "attendance_summary": attendance_summary
+        "total_employees": total_emp,
+        "present_today": present_cnt,
+        "absent_today": absent_cnt,
+        "not_marked_today": total_emp - present_cnt - absent_cnt,
+        "department_breakdown": dept_data,
+        "attendance_summary": att_data,
     }
