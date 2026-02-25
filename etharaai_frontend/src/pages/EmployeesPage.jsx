@@ -48,7 +48,7 @@ export default function EmployeesPage() {
   const handleDelete = async () => {
     if (!deleteTarget) return;
     try {
-      await deleteEmployee(deleteTarget.id);
+      await deleteEmployee(deleteTarget.employee_id);
       toast.success("Employee deleted.");
       setDeleteTarget(null);
       fetchEmployees();

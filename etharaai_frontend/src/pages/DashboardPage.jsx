@@ -67,7 +67,10 @@ export default function DashboardPage() {
   if (error) return <ErrorState message={error} onRetry={fetchData} />;
   if (!data) return <EmptyState message="No dashboard data available." />;
 
-  const maxDeptCount = Math.max(...data.departments.map((d) => d.count), 1);
+  // Backend uses "department_breakdown" and "attendance_summary"
+  const departments = data.department_breakdown || [];
+  const attendanceSummary = data.attendance_summary || [];
+  const maxDeptCount = Math.max(...departments.map((d) => d.count), 1);
 
   return (
     <div className="dash">
@@ -82,11 +85,11 @@ export default function DashboardPage() {
         {/* --- Department Breakdown --- */}
         <div className="card dash-panel">
           <h3>Departments</h3>
-          {data.departments.length === 0 ? (
+          {departments.length === 0 ? (
             <EmptyState message="No departments yet." />
           ) : (
             <div className="dept-bars">
-              {data.departments.map((d) => (
+              {departments.map((d) => (
                 <div key={d.department} className="dept-row">
                   <div className="dept-meta">
                     <span className="dept-name">{d.department}</span>
@@ -107,19 +110,15 @@ export default function DashboardPage() {
         {/* --- Employee Attendance Overview --- */}
         <div className="card dash-panel">
           <h3>Attendance Overview</h3>
-          {data.employee_attendance.length === 0 ? (
-            <EmptyState message="No employees yet." />
+          {attendanceSummary.length === 0 ? (
+            <EmptyState message="No attendance data yet." />
           ) : (
             <div className="att-list">
-              {data.employee_attendance.map((emp) => {
-                const pct = emp.total_records > 0
-                  ? Math.round((emp.total_present / emp.total_records) * 100)
-                  : 0;
-                const absent = emp.total_records - emp.total_present;
+              {attendanceSummary.map((emp) => {
                 const bgColor = pickColor(emp.full_name);
 
                 return (
-                  <div key={emp.id} className="att-row">
+                  <div key={emp.employee_id} className="att-row">
                     <div className="att-avatar" style={{ background: bgColor }}>
                       {getInitials(emp.full_name)}
                     </div>
@@ -128,24 +127,10 @@ export default function DashboardPage() {
                       <span className="att-dept">{emp.department}</span>
                     </div>
                     <div className="att-stats">
-                      <span className="badge badge-success">{emp.total_present}P</span>
-                      <span className="badge badge-danger">{absent}A</span>
+                      <span className="badge badge-success">{emp.present_days}P</span>
                     </div>
                     <div className="att-pct">
-                      <svg viewBox="0 0 36 36" className="ring-svg">
-                        <circle cx="18" cy="18" r="15.9" className="ring-bg" />
-                        <circle
-                          cx="18"
-                          cy="18"
-                          r="15.9"
-                          className="ring-fg"
-                          style={{
-                            strokeDasharray: `${pct} ${100 - pct}`,
-                            stroke: pct >= 75 ? "#059669" : pct >= 50 ? "#d97706" : "#dc2626",
-                          }}
-                        />
-                      </svg>
-                      <span className="ring-label">{pct}%</span>
+                      <span className="ring-label">{emp.present_days} days</span>
                     </div>
                   </div>
                 );

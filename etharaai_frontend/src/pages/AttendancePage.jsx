@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback } from "react";
 import { toast } from "react-toastify";
-import { getAttendance, markAttendance, getAttendanceSummary } from "../api/attendance";
+import { getAttendanceByEmployee, markAttendance } from "../api/attendance";
 import { getEmployees } from "../api/employees";
 import AttendanceForm from "../components/Attendance/AttendanceForm";
 import AttendanceTable from "../components/Attendance/AttendanceTable";
@@ -15,37 +15,7 @@ export default function AttendancePage() {
   const [error, setError] = useState(null);
 
   const [filterEmployee, setFilterEmployee] = useState("");
-  const [filterDateFrom, setFilterDateFrom] = useState("");
-  const [filterDateTo, setFilterDateTo] = useState("");
-  const [summary, setSummary] = useState(null);
-
-  const fetchRecords = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const params = {};
-      if (filterEmployee) params.employee_id = filterEmployee;
-      if (filterDateFrom) params.date_from = filterDateFrom;
-      if (filterDateTo) params.date_to = filterDateTo;
-      const res = await getAttendance(params);
-      setRecords(res.data);
-
-      if (filterEmployee) {
-        try {
-          const sumRes = await getAttendanceSummary(filterEmployee);
-          setSummary(sumRes.data);
-        } catch {
-          setSummary(null);
-        }
-      } else {
-        setSummary(null);
-      }
-    } catch (err) {
-      setError(err.response?.data?.detail || "Failed to load attendance.");
-    } finally {
-      setLoading(false);
-    }
-  }, [filterEmployee, filterDateFrom, filterDateTo]);
+  const [filterDate, setFilterDate] = useState("");
 
   const fetchEmployees = useCallback(async () => {
     try {
@@ -56,8 +26,48 @@ export default function AttendancePage() {
     }
   }, []);
 
+  const fetchRecords = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      if (filterEmployee) {
+        // Fetch attendance for a specific employee
+        const res = await getAttendanceByEmployee(filterEmployee, filterDate || undefined);
+        setRecords(res.data);
+      } else {
+        // No global attendance endpoint — fetch for all employees and merge
+        if (employees.length === 0) {
+          setRecords([]);
+        } else {
+          const allRecords = [];
+          for (const emp of employees) {
+            try {
+              const res = await getAttendanceByEmployee(emp.employee_id, filterDate || undefined);
+              allRecords.push(...res.data);
+            } catch {
+              // skip if error for individual employee
+            }
+          }
+          // Sort by date descending
+          allRecords.sort((a, b) => b.date.localeCompare(a.date));
+          setRecords(allRecords);
+        }
+      }
+    } catch (err) {
+      setError(err.response?.data?.detail || "Failed to load attendance.");
+    } finally {
+      setLoading(false);
+    }
+  }, [filterEmployee, filterDate, employees]);
+
   useEffect(() => { fetchEmployees(); }, [fetchEmployees]);
-  useEffect(() => { fetchRecords(); }, [fetchRecords]);
+  useEffect(() => {
+    if (employees.length > 0 || filterEmployee) {
+      fetchRecords();
+    } else {
+      setLoading(false);
+    }
+  }, [employees, filterEmployee, filterDate, fetchRecords]);
 
   const handleMark = async (data) => {
     try {
@@ -87,39 +97,22 @@ export default function AttendancePage() {
             >
               <option value="">All Employees</option>
               {employees.map((emp) => (
-                <option key={emp.id} value={emp.id}>
+                <option key={emp.id} value={emp.employee_id}>
                   {emp.full_name} ({emp.employee_id})
                 </option>
               ))}
             </select>
           </div>
           <div className="form-group">
-            <label htmlFor="filter-from">From</label>
+            <label htmlFor="filter-date">Date</label>
             <input
-              id="filter-from"
+              id="filter-date"
               type="date"
-              value={filterDateFrom}
-              onChange={(e) => setFilterDateFrom(e.target.value)}
-            />
-          </div>
-          <div className="form-group">
-            <label htmlFor="filter-to">To</label>
-            <input
-              id="filter-to"
-              type="date"
-              value={filterDateTo}
-              onChange={(e) => setFilterDateTo(e.target.value)}
+              value={filterDate}
+              onChange={(e) => setFilterDate(e.target.value)}
             />
           </div>
         </div>
-
-        {summary && (
-          <div className="summary-bar">
-            <strong>{summary.employee_name}</strong> &mdash;{" "}
-            Present: <span className="badge badge-success">{summary.total_present}</span>{" "}
-            Absent: <span className="badge badge-danger">{summary.total_absent}</span>
-          </div>
-        )}
 
         {loading && <Loader />}
         {error && <ErrorState message={error} onRetry={fetchRecords} />}

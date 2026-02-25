@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { FiCheckCircle, FiXCircle } from "react-icons/fi";
-import { getAttendance } from "../../api/attendance";
+import { getAttendanceByEmployee } from "../../api/attendance";
 
 const AVATAR_COLORS = [
   "#4f46e5", "#059669", "#d97706", "#dc2626",
@@ -24,31 +24,40 @@ export default function AttendanceForm({ employees, onSubmit }) {
   const [saving, setSaving] = useState({});
 
   const fetchDayRecords = useCallback(async () => {
-    if (!selectedDate) return;
+    if (!selectedDate || employees.length === 0) return;
     try {
-      const res = await getAttendance({ date_from: selectedDate, date_to: selectedDate });
+      // Fetch attendance for each employee on the selected date
       const map = {};
-      res.data.forEach((r) => { map[r.employee_id] = r.status; });
+      for (const emp of employees) {
+        try {
+          const res = await getAttendanceByEmployee(emp.employee_id, selectedDate);
+          if (res.data.length > 0) {
+            map[emp.employee_id] = res.data[0].status;
+          }
+        } catch {
+          // skip
+        }
+      }
       setDayRecords(map);
     } catch {
       setDayRecords({});
     }
-  }, [selectedDate]);
+  }, [selectedDate, employees]);
 
   useEffect(() => { fetchDayRecords(); }, [fetchDayRecords]);
 
-  const handleMark = async (empId, status) => {
-    setSaving((prev) => ({ ...prev, [empId]: true }));
+  const handleMark = async (employeeId, status) => {
+    setSaving((prev) => ({ ...prev, [employeeId]: true }));
     try {
-      await onSubmit({ employee_id: empId, date: selectedDate, status });
-      setDayRecords((prev) => ({ ...prev, [empId]: status }));
+      await onSubmit({ employee_id: employeeId, date: selectedDate, status });
+      setDayRecords((prev) => ({ ...prev, [employeeId]: status }));
     } finally {
-      setSaving((prev) => ({ ...prev, [empId]: false }));
+      setSaving((prev) => ({ ...prev, [employeeId]: false }));
     }
   };
 
-  const marked = employees.filter((e) => dayRecords[e.id]);
-  const unmarked = employees.filter((e) => !dayRecords[e.id]);
+  const marked = employees.filter((e) => dayRecords[e.employee_id]);
+  const unmarked = employees.filter((e) => !dayRecords[e.employee_id]);
 
   return (
     <div className="card">
@@ -90,7 +99,7 @@ export default function AttendanceForm({ employees, onSubmit }) {
             <>
               <div className="bulk-section-label">Not yet marked</div>
               {unmarked.map((emp) => (
-                <div key={emp.id} className="bulk-row">
+                <div key={emp.employee_id} className="bulk-row">
                   <div className="bulk-avatar" style={{ background: pickColor(emp.full_name) }}>
                     {getInitials(emp.full_name)}
                   </div>
@@ -101,15 +110,15 @@ export default function AttendanceForm({ employees, onSubmit }) {
                   <div className="bulk-actions">
                     <button
                       className="bulk-btn bulk-btn-present"
-                      disabled={saving[emp.id]}
-                      onClick={() => handleMark(emp.id, "Present")}
+                      disabled={saving[emp.employee_id]}
+                      onClick={() => handleMark(emp.employee_id, "Present")}
                     >
                       <FiCheckCircle /> Present
                     </button>
                     <button
                       className="bulk-btn bulk-btn-absent"
-                      disabled={saving[emp.id]}
-                      onClick={() => handleMark(emp.id, "Absent")}
+                      disabled={saving[emp.employee_id]}
+                      onClick={() => handleMark(emp.employee_id, "Absent")}
                     >
                       <FiXCircle /> Absent
                     </button>
@@ -123,9 +132,9 @@ export default function AttendanceForm({ employees, onSubmit }) {
             <>
               <div className="bulk-section-label">Already marked</div>
               {marked.map((emp) => {
-                const status = dayRecords[emp.id];
+                const status = dayRecords[emp.employee_id];
                 return (
-                  <div key={emp.id} className="bulk-row bulk-row-done">
+                  <div key={emp.employee_id} className="bulk-row bulk-row-done">
                     <div className="bulk-avatar" style={{ background: pickColor(emp.full_name) }}>
                       {getInitials(emp.full_name)}
                     </div>
